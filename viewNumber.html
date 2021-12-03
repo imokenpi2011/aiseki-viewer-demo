@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style type="text/css">
+    html {
+    height: 100%;
+    font-family:  'メイリオ', Meiryo,'ヒラギノ角ゴ ProN', 'Hiragino Kaku Gothic ProN',  'ＭＳ Ｐゴシック', 'MS PGothic', sans-serif;
+    }
+
+    header {
+      height:44px;
+      background:#4169e1;
+    }
+
+    body {
+      text-align: center;
+      height:90%;
+      margin:0;
+    }
+
+    button{
+      -webkit-appearance: none;
+    }
+
+    .title_text{
+      font-size: 23px;
+      margin:0;
+      padding:5px 0;
+      color:white;
+    }
+
+    .link_button{
+      position: absolute;
+      right: 10px;
+      height: 32px;
+      top: 6px;
+      padding: 0 5px;
+      border: none;
+      font-size: 10px;
+      background:white;
+    }
+
+    .loading_image{
+      font-size: 11px;
+      margin: 100px auto;
+    }
+
+    #areaMenu {
+      font-size:16px;
+      display:none;
+      width:50%;
+    }
+
+    .updateTime{
+      display:none;
+    }
+
+    #chartArea{
+      position: relative;
+      height:80%;
+      padding:0 20px;
+      overflow-y:scroll;
+    }
+    </style>
+    <base target="_top">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.css" rel="stylesheet">
+  </head>
+  <header>
+    <p class='title_text'>相席屋現在人数</p>
+    <button class='link_button'>過去の人数推移</button>
+  </header>
+  <body>
+    <h5 class="loading_image"><img src="https://www.benricho.org/loading_images/img-popular/loading-35.gif"><br>データの取得中...<br>(この処理には時間がかかります)</h5>
+    <h5 class="updateTime"></h5>
+    <div id="menuArea">
+      <select id="areaMenu"></select>
+    </div>
+    <div id="chartArea">
+      <canvas id="chart"></canvas>
+    </div>
+  </body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script type="text/javascript">
+    $(function(){
+      var shopList = [];
+      var areaList = [];
+      window.chart;
+
+      //初期処理
+      init();
+
+      //リンクボタン押下時に人数推移のページを表示する
+      $('.link_button').on('click', function() {
+        google.script.run
+          .withSuccessHandler(result).getScriptUrl();
+          function result(url){
+            window.open(url+'?page=transition', '_top')
+          }
+      });
+
+      //プルダウン変更した際にグラフを作り直す
+      $("select").change(function(){
+        var area = $(this).val();
+        generateGraph(area);
+      });
+
+      /**
+       * 初期処理として現在人数と最終更新日時を取得する。
+      */
+      function init(){
+        google.script.run
+        .withSuccessHandler(function(shopList){
+          setShopList(shopList);
+          createAreaList(shopList);
+          generateGraph();
+        })
+        .withFailureHandler(function(){console.log('failed to get shoplist.')})
+        .getShopList();
+  
+        google.script.run
+        .withSuccessHandler(function(updateTime){
+          viewUpdateTime(updateTime);
+        })
+        .withFailureHandler(function(){console.log('failed to get updateTime.')})
+        .getUpdateTime();
+      }
+
+      /**
+       * スプレッドシートから取得した店舗リストを格納する
+       * 
+       * @param {Object} data 店舗リスト
+       */
+      function setShopList(data){
+        for (var i=0;i<data.length;i++){
+          shopList.push(data[i]);
+        }
+      }
+
+      /**
+       * スプレッドシートから取得した最終更新日時を表示する
+       * 
+       * @param {String} updateTime 最終更新日時
+       */
+      function viewUpdateTime(updateTime){
+        $('.updateTime').append(updateTime);
+      }
+
+      /**
+       * プルダウンに表示するエリア名のリストを生成する
+       * 
+       * @param {Object} shopList スプレッドシートから取得した店舗リスト
+       */
+      function createAreaList(shopList) {
+        $(".loading_image").remove();
+        $('.updateTime').show();
+        $('#areaMenu').show();
+        for (var i=0; i < shopList.length; i++){
+          if(areaList.indexOf(shopList[i][0])==-1){
+            areaList.push(shopList[i][0]);
+            $('#areaMenu').append('<option value="'+shopList[i][0]+'">'+shopList[i][0]+'</option>');
+          }
+        }
+      }
+
+      /**
+       * Chart.jsを仕様してグラフを作成する。
+       */
+      function generateGraph(area){
+      
+        var useShopList = [];
+        if(areaList.indexOf(area) == -1){
+          //エリア名が指定されていない場合は最初のエリアを表示
+          area = shopList[0][0];
+          for(var i=0; i<shopList.length;i++){
+            if(shopList[i][0] == area){
+              useShopList.push(shopList[i]);
+            }
+          }
+        } else{
+          //エリア名が指定されている場合は対象エリア店舗のみ格納
+          for(var i=0; i<shopList.length;i++){
+            if(shopList[i][0] == area){
+              useShopList.push(shopList[i]);
+            }
+          }
+        }
+      
+        //男女数の配列を作成
+        var columnList = [];
+        var numberList = [];
+      
+        //男女の合計人数のリストを作成
+        var sumList = [];
+        for(var i=0;i<useShopList.length;i++){
+          columnList.push(useShopList[i][2]);
+          var number =[]
+          number.push(useShopList[i][3]);
+          number.push(useShopList[i][4]);
+          numberList.push(number);
+      
+          sumList.push(useShopList[i][3]+useShopList[i][4]);
+        }
+        //人数の最大値からグラフの最大値を算出する
+        var graphMax = Math.ceil(Math.max.apply(null, sumList)/10)*10;
+      
+        var dataSeriesList = [
+          '男性','女性'
+        ];
+        var colorList = [
+          'rgba(0,0,255,0.4)','rgba(255,0,0,0.4)'
+        ];
+        
+        //チャートの値を生成
+        var data = {};
+        data['labels'] = columnList;
+        data['datasets'] = [];
+        for (var i=0; i<dataSeriesList.length;i++){
+          var dataList = [];
+          for (var j=0; j<numberList.length;j++){
+            dataList.push(numberList[j][i]);
+          }
+          data['datasets'].push({
+            'label':dataSeriesList[i],
+            'data':dataList,
+            'backgroundColor':colorList[i],
+            'borderColor':colorList[i],
+            'fill':'false',
+          });
+        }
+      
+        //表示オプションを作成
+        var options = {};
+        options['responsive'] = true;
+        options['maintainAspectRatio'] = false;
+      
+        var title = {};
+        title['display'] = true;
+        //title['text'] = area;
+        options['title'] = title;
+        options['scales'] = {};
+        options['scales']['xAxes'] = [];
+        var ticks ={};
+        ticks['fontSize'] = 7;
+        options['scales']['xAxes'].push({
+          'ticks':ticks,
+          'stacked':true
+        });
+        options['scales']['yAxes'] = [];
+        var ticks ={};
+        ticks['biginAtZero'] = true;
+        ticks['min'] = 0;
+        ticks['max'] = graphMax;
+        ticks['stepSize'] = 10;
+        //ticks['autoSkip'] = true;
+        options['scales']['yAxes'].push({
+          'stacked':true,
+          'ticks':ticks
+        });
+        
+        //ライブラリに放り込むパラメータとして作成
+        var parameters = {};
+        parameters['type'] = 'bar';
+        parameters['data'] = data;
+        parameters['options'] = options;
+        //console.log(JSON.stringify(parameters));
+        createGraph(parameters);
+      }
+
+      /**
+       * グラフを生成する.
+       * 
+       * @param {Object} parameters グラフ作成のためのパラメータ
+      */
+      function createGraph(parameters) {
+        if (chart){
+          $('.chartjs-size-monitor').remove();
+          $("#chart").remove();
+          $("#chartArea").append('<canvas id="chart"></canvas>');
+        }
+        var element = document.getElementById("chart");
+        chart = new Chart(element,parameters);
+      }
+    });
+  </script>
+</html>
