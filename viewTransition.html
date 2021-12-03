@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style type="text/css">
+    html {
+    height: 100%;
+    font-family:  'メイリオ', Meiryo,'ヒラギノ角ゴ ProN', 'Hiragino Kaku Gothic ProN',  'ＭＳ Ｐゴシック', 'MS PGothic', sans-serif;
+    }
+
+    header {
+      height:44px;
+      background:#4169e1;
+    }
+
+    body {
+      text-align: center;
+      height:90%;
+      margin:0;
+    }
+
+    button{
+      -webkit-appearance: none;
+    }
+
+    .title_text{
+      font-size: 23px;
+      margin:0;
+      padding:5px 0;
+      color:white;
+    }
+
+    .link_button{
+      position: absolute;
+      right: 10px;
+      height: 32px;
+      top: 6px;
+      padding: 0 5px;
+      border: none;
+      font-size: 10px;
+      background:white;
+    }
+
+    .loading_image{
+      font-size: 12px;
+      margin: 100px auto;
+    }
+
+    #prefecture_menu {
+      font-size:16px;
+      width:70%;
+    }
+
+    #shop_menu {
+      font-size:16px;
+      width:70%;
+    }
+
+    #menu_area{
+      display:none;
+      margin:10px 0;
+    }
+
+    #button_area{
+      display:none;
+    }
+
+    #chart_area{
+      display:none;
+      position: relative;
+      height:50%;
+      padding:0 20px;
+      overflow-y:scroll;
+    }
+
+    .nodata_message{
+      display:none;
+      position: absolute;
+      font-size: 13px;
+      margin: 0;
+      top: 50%;
+      left: 50%;
+      transform: translateX(-50%);
+      -webkit-transform: translateX(-50%);
+      -ms-transform: translateX(-50%);
+    }
+
+    #button_area{
+      display:none;
+      display:flex;
+      flex-wrap: wrap;
+      justify-content:space-between;
+      margin: 0 30px;
+    }
+
+    .date_change_button{
+      background:whitesmoke;
+      border-color:gray;
+      padding: 9px 5px;
+      margin:5px;
+    }
+
+    .date_change_button:disabled{
+      background:ghostwhite;
+      border-color:lightgrey;
+    }
+
+    .pre_button_area,.next_button_area{
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      margin: auto 0;
+    }
+
+    </style>
+    <base target="_top">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.css" rel="stylesheet">
+  </head>
+  <header>
+    <p class='title_text'>相席屋人数推移</p>
+    <button class='link_button'>現在の来店人数</button>
+  </header>
+  <body>
+    <h5 class="loading_image"><img src="https://www.benricho.org/loading_images/img-popular/loading-35.gif"><br>データの取得中...<br>(この処理に10秒ほどかかります...)</h5>
+    <div id="menu_area">
+      <select id="prefecture_menu">
+      </select>
+      <select id="shop_menu">
+      </select>
+    </div>
+    <div id="button_area">
+      <div id="pre_button_area">
+        <button class="date_change_button pre_week_button">◀︎◀︎</button>
+        <button class="date_change_button pre_button">◀︎</button>
+      </div>
+      <div class="date_text">
+        <p></p>
+      </div>
+      <div id="next_button_area">
+        <button class="date_change_button next_button">▶︎</button>
+        <button class="date_change_button next_week_button">▶︎▶︎</button>
+      </div>
+    </div>
+    <div id="chart_area">
+      <canvas id="chart"></canvas>
+      <p class="nodata_message">表示できるデータがありません</p>
+    </div>
+  </body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.2/Chart.bundle.js"></script>
+  <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.js"></script> -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script type="text/javascript">
+    $(function(){
+      //県ごとの店舗リストを格納する
+      var shopNameList = [];
+      //全店舗情報(店舗名、エリア、県)を格納する
+      var shopDataList = [];
+      //選択中の店舗の人数データを格納する
+      var curShopDataList = [];
+      //店舗の特定の日付の人数一覧を格納する
+      var curDateDataList = [];
+      //DBから取得した全データを格納する
+      var dataList = [];
+      //曜日名を格納するリスト
+      var dayOfWeek = [ "日", "月", "火", "水", "木", "金", "土"];
+
+      var minDate;
+      var maxDate;
+      var minTime;
+      var maxTime;
+      var curDate;
+      var maxNum;
+      window.chart;
+
+      //初期処理
+      init();
+
+      //リンクボタン押下時に現在人数のページを表示する
+      $('.link_button').on('click', function() {
+        google.script.run
+          .withSuccessHandler(result).getScriptUrl();
+          function result(url){
+            window.open(url+'?page=number', '_top')
+          }
+      });
+
+      //都道府県のプルダウン変更した際に店舗リストを作り直す
+      $('#prefecture_menu').change(function(){
+        $('#shop_menu').empty();
+        var prefecture = $(this).val();
+        createShopList(prefecture);
+        generateDataAndGraph($('#shop_menu').val());
+
+      });
+
+      //店舗のプルダウン変更した際に対象店舗の最新日時のグラフを生成する
+      $('#shop_menu').change(function(){
+        var shopId = $(this).val();
+        generateDataAndGraph(shopId);
+      });
+
+      //スマートフォンのみプルダウン選択中に他のプルダウンを無効化する処理
+      if (navigator.userAgent.match(/iPhone|Android.+Mobile/)) {
+        $('#prefecture_menu').on('focus', function(){
+          $("#shop_menu").prop("disabled", true);
+        });
+
+        $('#prefecture_menu').on('focusout', function(){
+          $("#shop_menu").prop("disabled", false);
+        });
+
+        $('#shop_menu').on('focus', function(){
+          $("#prefecture_menu").prop("disabled", true);
+        });
+
+        $('#shop_menu').on('focusout', function(){
+          $("#prefecture_menu").prop("disabled", false);
+        });
+      }
+
+      //次へボタン押下時に選択日付を変更してグラフを再作成する
+      $('.next_button').on('click', function() {
+        console.log('次へ');
+        curDate.setDate(curDate.getDate()+1);
+        createDateDataList(curDate);
+        generateGraph();
+      });
+
+      //前へボタン押下時に選択日付を変更してグラフを再作成する
+      $('.pre_button').on('click', function() {
+        console.log('戻る');
+        curDate.setDate(curDate.getDate()-1);
+        createDateDataList(curDate);
+        generateGraph();
+      });
+
+      //次へボタン押下時に選択日付を変更してグラフを再作成する
+      $('.next_week_button').on('click', function() {
+        curDate.setDate(curDate.getDate()+7);
+        createDateDataList(curDate);
+        generateGraph();
+      });
+
+      //次へボタン押下時に選択日付を変更してグラフを再作成する
+      $('.pre_week_button').on('click', function() {
+        curDate.setDate(curDate.getDate()-7);
+        createDateDataList(curDate);
+        generateGraph();
+      });
+
+
+      /**
+       * ページ読み込み時の初期処理を行う。
+       * 
+      */
+      function init(){
+        $('.loading_image').show();
+        $('#menu_area').hide();
+        $('#button_area').hide();
+        $('#chart_area').hide();
+
+        //初期処理
+        //県名リストの取得
+        google.script.run
+        .withSuccessHandler(function(list){
+          createPrefectureList(list)
+          console.log(list[0]);
+        })
+        .withFailureHandler(function(){console.log('failed to get prefecture data.')})
+        .getShopMst();
+  
+        //データの取得
+        google.script.run
+        .withSuccessHandler(function(list){
+          getRegistedData(list)
+          generateDataAndGraph($('#shop_menu').val());
+        })
+        .withFailureHandler(function(){console.log('failed to get number data.')})
+        .viewGraph();
+      }
+
+      /**
+       * 初期処理、プルダウン変更時に
+       * 店舗ごとのデータ作成⇨最新日のデータでグラフを作成の処理を行う.
+       * 
+       * @param {number} shopId 選択中の店舗ID
+      */
+      function generateDataAndGraph(shopId){
+        //選択店舗のリスト作成
+        createShopDataList(shopId);
+
+        //選択店舗のデータが存在する場合は処理を続行
+        if(curShopDataList.length > 0){
+
+          //初期表示用の最新日付と最古日付を設定する
+          var firstData = curShopDataList[0][0];
+          var lastData = curShopDataList[curShopDataList.length-1][0];
+
+          //取得日時は16時-翌6時のため、対象データが0-5時の場合は日にちを1減らした日時を設定する
+          if(firstData.getHours() < 16){
+            firstData.setDate(firstData.getDate()-1);
+          }
+          if(lastData.getHours() < 16){
+            lastData.setDate(lastData.getDate()-1);
+          }
+  
+          minDate = new Date(firstData.getFullYear(), firstData.getMonth(), firstData.getDate());
+          maxDate = new Date(lastData.getFullYear(), lastData.getMonth(), lastData.getDate());
+  
+          //デフォルトに最新日付を設定する
+          curDate = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate());
+          createDateDataList(maxDate);
+
+          //グラフの表示
+          generateGraph();
+
+          //ボタンの表示
+          $('#button_area').show();
+  
+        }else{
+          //選択店舗のデータが存在しない場合の処理  
+
+          //表示しているグラフの除去        
+          removeGraph();
+          //メッセージ表示
+          $('.nodata_message').show();
+          $('.nodata_message').text('選択した店舗のデータがありません');
+
+          //ボタンを表示しない
+          $('#button_area').hide();
+        }
+
+          $('.loading_image').hide();
+          $('#menu_area').show();
+          $('#chart_area').show();
+
+      }
+
+      /**
+       * プルダウンに表示する都道府県リストを作成する.
+       * 
+       * @param {Object} data 店舗マスタから取得した全データ
+      */
+      function createPrefectureList(data){
+        //都道府県リストと店舗リストを作成する
+        //県名の重複判定用リスト
+        var prefectureList = [];
+        for (var i=0; i < data.length; i++){
+          shopNameList.push(data[i]);
+          if(prefectureList.indexOf(data[i][2])==-1){
+            prefectureList.push(data[i][2]);
+            $('#prefecture_menu').append('<option value="'+data[i][5]+'">'+data[i][2]+'</option>');
+          }
+        }
+
+        //初期処理として
+        createShopList(shopNameList[0][5]);
+      }
+
+      /**
+       * プルダウンに表示する店舗リストを作成する.
+       * 
+       * @param {number} prefecture 都道府県ID
+      */
+      function createShopList(prefecture){
+        //店舗リストを作成する
+        for (var i=0; i < shopNameList.length; i++){
+          if (prefecture == shopNameList[i][5]){
+            $('#shop_menu').append('<option value="'+shopNameList[i][3]+'">'+shopNameList[i][0]+'</option>');
+          }
+        }
+      }
+
+      /**
+       * スプレッドシートから受け取ったデータ一覧を作成する.
+       * 
+       * @param {Object} data 人数情報が入った全データ
+      */
+      function getRegistedData(data){
+
+        for(var i=0; i < data.length; i++){
+          //文字列で受け取った日付をDate型に変換する
+          data[i][0] = new Date(data[i][0]);
+          dataList.push(data[i]);
+        }
+      }
+
+      /**
+       * 選択した店舗に応じたデータリストを作成する.
+       * 
+       * @param {number} shopId 選択中の店舗ID
+      */
+      function createShopDataList(shopId){
+        curShopDataList = [];
+        for(var i=0; i < dataList.length; i++){
+          if(shopId == dataList[i][3]){
+            curShopDataList.push(dataList[i]);
+          }
+        }
+      }
+
+      /**
+       * 選択した日時に応じたデータリストを作成する.
+       * 
+       * @param {date} date グラフ生成の対象日
+       * 
+      */
+      function createDateDataList(date){
+        //初期化
+        curDateDataList = [];
+
+        //データ0件のメッセージを非表示にする
+        $('.nodata_message').hide();
+
+        //現在の選択日付を表示する
+        $('.date_text p').text(date.getFullYear()+'年'+(date.getMonth() +1)+'月'+date.getDate()+'日('+dayOfWeek[date.getDay()]+')');
+
+        //選択日の17時を取得の始点に設定
+        minTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 17);
+        //選択日の翌5時を取得の終点に設定
+        maxTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()+1, 5);
+
+        //選択日の17時から翌5時までのデータを抽出する
+        for(var i =0;i < curShopDataList.length;i++){
+          if(curShopDataList[i][0] <= maxTime && curShopDataList[i][0] >= minTime){
+            //配列の直前のデータの時間よりも前だった場合は格納しない(グラフ逆流防止&昇順に取得するDBの仕様のため)
+            if(i != 0 && curShopDataList[i-1][0] < curShopDataList[i][0]){
+              curDateDataList.push(curShopDataList[i]);
+            }
+          }
+        }
+
+        //ボタンの活性、非活性化チェック
+        dateButtonActivationCheck();
+      }
+
+      /**
+       * 日付変更ボタンの活性・非活性を制御する.
+       * 
+       * @see {date} curDate グラフの表示対象日
+       * @see {date} maxDate 選択店舗の最大のデータ日付
+       * @see {date} minDate 選択店舗の最小のデータ日付
+      */
+      function dateButtonActivationCheck(){
+        $(".date_change_button").prop("disabled", false);
+        
+        //1日移動ボタン非活性処理
+        if(curDate >= maxDate){
+          //選択日付が最新日付の場合は次へボタンを非活性化
+          $(".next_button").prop("disabled", true);
+        }else if(curDate <= minDate){
+          //選択日付が最古日付の場合は前へボタンを非活性化
+          $(".pre_button").prop("disabled", true);
+        }
+
+        //1週間ボタン非活性処理
+        if(new Date(curDate.getFullYear(), curDate.getMonth(), curDate.getDate()+7) > maxDate){
+          //選択日付が最新日付の場合は次へボタンを非活性化
+          $(".next_week_button").prop("disabled", true);
+        }else if(new Date(curDate.getFullYear(), curDate.getMonth(), curDate.getDate()-7) < minDate){
+          //選択日付が最古日付の場合は前へボタンを非活性化
+          $(".pre_week_button").prop("disabled", true);
+        }
+
+      }
+
+      /**
+       * Chart.jsを仕様してグラフを作成する.
+       * 
+       * @see {Object} curDateDataList 選択した店舗の表示する対象日のデータリスト
+       */
+      function generateGraph(){
+      
+        //男女数の配列を作成
+        var columnList = [];
+        var numberList = [];
+      
+        //男女の合計人数のリストを作成
+        var sumList = [];
+        //グラフの最大値算出用の値を定義
+        maxNum = 0;
+        for(var i=0;i<curDateDataList.length;i++){
+          //x軸のリストを設定する
+          columnList.push(curDateDataList[i][0]);
+          var number =[];
+          var maleNum = curDateDataList[i][4];
+          var femaleNum = curDateDataList[i][5];
+          //男女ともに0の場合、男女比を0にする
+          if (femaleNum / (maleNum + femaleNum) == null){
+            number.push(Math.round(femaleNum / (maleNum + femaleNum) * 100));
+          }else{
+            number.push(Math.round(femaleNum / (maleNum + femaleNum) * 100));
+          }
+          number.push(maleNum);
+          number.push(femaleNum);
+          numberList.push(number);
+      
+          //最大人数を算出する
+          if(maxNum < maleNum){
+            maxNum = maleNum;
+          }
+          if(maxNum < femaleNum){
+            maxNum = femaleNum;
+          }
+        }
+      
+        //データの分類を定義
+        var dataSeriesList = [
+          '女性比','男性','女性'
+        ];
+        //グラフの色を定義
+        var colorList = [
+          'rgba(60,60,60,0.9)','rgba(0,0,255,0.4)','rgba(255,0,0,0.4)'
+        ];
+        //全体に色をつけるか定義
+        var fillList = [
+          false, true, true
+        ];
+        //線を点線にするか定義
+        var borderDashList = [
+          [5,5],[5,0],[5,0]
+        ];
+        //線の曲がり具合を定義
+        var lineTensionList = [
+          '0','0','0'
+        ];
+        //グラフ分類IDを定義
+        var idList = [
+          'y-axis-1','y-axis-2'
+        ];
+        //分類とIDを紐づけるリスト
+        var yAxisIDList = [
+          idList[1],idList[0],idList[0]
+        ];
+        
+        //チャートの値を生成
+        var data = {};
+        data['labels'] = columnList;
+        data['datasets'] = [];
+        for (var i=0; i<dataSeriesList.length;i++){
+          var dataList = [];
+          for (var j=0; j<numberList.length;j++){
+            dataList.push(numberList[j][i]);
+          }
+          data['datasets'].push({
+            'label':dataSeriesList[i],
+            'data':dataList,
+            'backgroundColor':colorList[i],
+            'borderColor':colorList[i],
+            'fill':fillList[i],
+            'borderDash':borderDashList[i],
+            'lineTension':lineTensionList[i],
+            'yAxisID': yAxisIDList[i]
+          });
+        }
+      
+        //表示オプションを作成
+        var options = {};
+        options['responsive'] = true;
+        options['maintainAspectRatio'] = false;
+      
+        var title = {};
+        title['display'] = true;
+        options['title'] = title;
+        options['scales'] = {};
+        options['scales']['xAxes'] = [];
+        var displayFormats ={};
+        displayFormats['hour'] = 'HH:mm';
+        var time ={};
+        time['parser'] = 'MM/DD HH:mm';
+        time['unit'] = 'hour';
+        time['stepSize'] = 1;
+        time['displayFormats'] = displayFormats;
+        var ticks ={};
+        ticks['fontSize'] = 10;
+        ticks['min'] = minTime;
+        ticks['max'] = maxTime;
+        options['scales']['xAxes'].push({
+          'type':'time',
+          'time':time,
+          'ticks':ticks
+        });
+
+        //y軸の設定
+        options['scales']['yAxes'] = [];
+
+        //ラベル表示の左右設定
+        var positionList = [
+          'left','right'
+        ];
+
+        // ラベルに表示する文字列設定
+        var labelStringList = [
+          '人数 (人)','女性比 (%)'
+        ];
+        
+        //グラフの最大値を定義
+        var graphMax = setGraphMax();
+
+        //最大値を設定。人数は可変、比率は100で固定
+        var maxNumList = [
+          graphMax,100
+        ];
+
+        //人数のグラフの最大値が100以下の場合は区切りを10ごと、それ以上なら25に設定する
+        var numStepSize;
+        if (graphMax > 100){
+          numStepSize = 25;
+        }else{
+          numStepSize = 10;
+        }
+        var stepSizeList = [
+          numStepSize,10
+        ];
+        var callbackList = [
+          '人','%'
+        ];
+        var drawOnchart_area =[
+          true,false
+        ];
+
+        //ラベルの数だけyAxesを設定する
+        for(var i =0;i < idList.length;i++){
+          var scaleLabel ={};
+          scaleLabel['display'] = true;
+          scaleLabel['labelString'] = labelStringList[i];
+          var ticks ={};
+          ticks['biginAtZero'] = true;
+          ticks['min'] = 0;
+          ticks['max'] = maxNumList[i];
+          ticks['stepSize'] = stepSizeList[i];
+          var gridLines ={};
+          gridLines['drawOnChartArea'] = drawOnchart_area[i];
+          options['scales']['yAxes'].push({
+            'id': idList[i],
+            'position': positionList[i],
+            'scaleLabel':scaleLabel,
+            'ticks':ticks,
+            'gridLines':gridLines
+          });
+        }
+
+        //ライブラリに放り込むパラメータとして作成
+        var parameters = {};
+        parameters['type'] = 'line';
+        parameters['data'] = data;
+        parameters['options'] = options;
+
+        //console.log(JSON.stringify(parameters));
+
+        //生成したパラメータを使用してグラフを生成
+        createGraph(parameters);
+      };
+
+      /**
+       * グラフの人数のy軸の最大値を設定する。
+       * 
+       * @return {number} graphMax y軸の最大値
+      */
+      function setGraphMax(){
+        //対象データが0件または来店人数0の場合はメッセージを表示し、最大値を0に設定する
+        if(curDateDataList.length == 0 || maxNum ==0){
+          if(curDateDataList.length == 0){
+            $('.nodata_message').text('表示できるデータがありません');
+          }else if(maxNum ==0){
+            $('.nodata_message').text('休業中 or 1人も来店していません');
+          }
+          graphMax = 0;
+          $('.nodata_message').show();
+        }else{
+          //その他の場合は最大人数に合わせて50単位で最大値を設定(例:最大人数70人→最大値100)
+          graphMax = 50 * (Math.floor(maxNum / 50) + 1);
+        }
+        return graphMax;
+      }
+      
+      /**
+       * グラフを生成する.
+       * 
+       * @param {Object} parameters グラフ作成のためのパラメータ
+      */
+      function createGraph(parameters) {
+        //グラフ表示を消す
+        removeGraph();
+
+        //グラフ生成
+        var element = document.getElementById("chart");
+        chart = new Chart(element,parameters);
+      }
+
+      /**
+       * グラフの表示をリセットする.
+      */
+      function removeGraph(){
+        $('.chartjs-size-monitor').remove();
+        $("#chart").remove();
+        $("#chart_area").append('<canvas id="chart"></canvas>');
+      }  
+
+    });
+  </script>
+</html>
