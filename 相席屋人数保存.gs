@@ -8,7 +8,13 @@ function registDb() {
 
   for(var i=0; i<shopList.length;i++){
     var registData = [curDateTime, shopList[i][5], shopList[i][6], shopList[i][7], shopList[i][3], shopList[i][4]];
-    registDataList.push(registData);
+
+    // 値が含まれるデータのみ登録する
+    if(isInvalidData(curDateTime, shopList[i][5], shopList[i][6], shopList[i][7], shopList[i][3], shopList[i][4])){
+      registDataList.push(registData);
+    } else {
+      console.error("[DB REGIST]invalid data at:",registData)
+    }
   }
   writeDbSheet(registDataList);
 }
